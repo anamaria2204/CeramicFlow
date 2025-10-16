@@ -16,15 +16,15 @@ Aplicația oferă **notificări, sincronizare offline/online, autentificare, ser
 
 ---
 
-## ✅ Funcționalități detaliate (conform cerințelor profesorului)
+## ✅ Funcționalități detaliate
 
 ### 1. Afișare listă de item-uri
-**Item principal:** Programare / Obiect ceramic
+**Item principal:** Programare
 Proprietăți:
 - `id` (numeric)
 - `numeObiect` (string)
 - `dataSesiune` (date)
-- `etapaCurenta` (string / boolean)
+- `etapaCurenta` (string)
 - `esteFinalizat` (boolean)
 - (opțional: preț, descriere, poză)
 
