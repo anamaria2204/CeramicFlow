@@ -22,10 +22,7 @@ CeramiFlow este o aplicație mobilă în **Ionic React** care permite utilizator
 - dataCreare (date)
 - etapaCurentă (string: modelare, uscare, ardere, pictare, glazurare, finalizat)
 - esteFinalizat (boolean)
-- imagine (opțional)
 - remindereProgramate (boolean)
-- dataUltimeiActualizări (date)
-
 ---
 
 ## ✅ Funcționalități principale
