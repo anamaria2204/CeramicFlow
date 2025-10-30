@@ -1,12 +1,13 @@
 import {
     IonContent, IonHeader, IonPage, IonTitle, IonToolbar, IonIcon, IonModal, IonButton,
-    IonDatetime, IonList, IonItem, IonLabel, useIonToast, IonSelect, IonSelectOption, IonFab, IonFabButton, IonBadge, IonInput
+    IonDatetime, IonList, IonItem, IonLabel, useIonToast, IonSelect, IonSelectOption, IonFab,
+    IonFabButton, IonBadge, IonSegment, IonSegmentButton
 } from '@ionic/react';
 import React, { useEffect, useState, useRef } from 'react';
-import { calendarOutline, notificationsOutline } from 'ionicons/icons';
 import ScheduleItem from './ScheduleItem';
 import { Schedule } from './Schedule';
 import { CeramicObject } from '../object/CeramicObject';
+import { calendarOutline, notificationsOutline, wifiOutline, warningOutline } from 'ionicons/icons';
 
 const ScheduleList: React.FC = () => {
     const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -25,16 +26,21 @@ const ScheduleList: React.FC = () => {
     const [editableReminders, setEditableReminders] = useState<boolean>(false);
 
     const [allCeramicObjects, setAllCeramicObjects] = useState<CeramicObject[]>([]);
-    const [notifications, setNotifications] = useState<CeramicObject[]>([]);
+    const [notifications, setNotifications] = useState<CeramicObject[]>([]); // Tipul corect
     const [showNotificationsModal, setShowNotificationsModal] = useState(false);
+
+    // Stare nouă pentru segmentul de filtrare
+    const [activeSegment, setActiveSegment] = useState<'pending' | 'active'>('pending');
+
+    const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
     const fetchAllSchedules = async () => {
         try {
-            // Preluăm TOATE programările, fără a specifica o dată
             const res = await fetch(`http://localhost:3000/schedules?clientId=${clientId}`);
             if (!res.ok) throw new Error("Failed to fetch schedules");
             const data: Schedule[] = await res.json();
-            data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());            setSchedules(data);
+            data.sort((a, b) => new Date(a.hour).getTime() - new Date(b.hour).getTime());
+            setSchedules(data);
         } catch (err) { console.error('Error fetching schedules:', err); }
     };
 
@@ -47,12 +53,18 @@ const ScheduleList: React.FC = () => {
         } catch (err) { console.error('Error fetching all ceramic objects:', err); }
     };
 
+    // MODIFICARE: Logica de adăugare a notificărilor (acumulare)
     const fetchNotifications = async () => {
         try {
             const res = await fetch(`http://localhost:3000/notifications`);
             if (!res.ok) throw new Error("Failed to fetch notifications");
-            const data: CeramicObject[] = await res.json();
-            setNotifications(data);
+            // Serverul trimite un tip nou, care include 'message'
+            const newNotifications: any[] = await res.json();
+
+            if (newNotifications.length > 0) {
+                // Acumulăm notificările, nu le suprascriem
+                setNotifications(prevNotifications => [...prevNotifications, ...newNotifications]);
+            }
         } catch (err) { console.error('Error fetching notifications:', err); }
     };
 
@@ -67,21 +79,58 @@ const ScheduleList: React.FC = () => {
     useEffect(() => {
         fetchAllSchedules();
         fetchAllCeramicObjects();
-        fetchNotifications();
-    }, []); // Se execută o singură dată, la încărcarea componentei
-
+    }, []);
     useEffect(() => {
         const ws = new WebSocket('ws://localhost:3000');
         wsRef.current = ws;
         ws.onopen = () => console.log("WebSocket connected");
-        ws.onmessage = () => {
-            console.log("Received update from server");
+        ws.onmessage = (event) => {
+            console.log("Received update from server", event.data);
+            // Acum reîncărcăm totul, inclusiv notificările noi
             fetchAllSchedules();
             fetchAllCeramicObjects();
-            fetchNotifications();
+            fetchNotifications(); // Apelăm DOAR când serverul ne anunță
         };
         ws.onclose = () => console.log("WebSocket closed");
         return () => ws.close();
+    }, []);
+
+    useEffect(() => {
+        if (showDatePicker) {
+            fetchAvailability(selectedDate);
+        }
+    }, [showDatePicker]);
+
+    useEffect(() => {
+        const handleOnline = () => {
+            console.log('Network status: Online');
+            setIsOnline(true);
+            presentToast({
+                message: 'You are back online!',
+                duration: 2000,
+                color: 'success',
+                position: 'top'
+            });
+        };
+
+        const handleOffline = () => {
+            console.log('Network status: Offline');
+            setIsOnline(false);
+            presentToast({
+                message: 'You are now offline.',
+                duration: 2000,
+                color: 'danger',
+                position: 'top'
+            });
+        };
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
     }, []);
 
     const handleOpenNotifications = () => {
@@ -90,7 +139,7 @@ const ScheduleList: React.FC = () => {
 
     const handleDateChange = (date: string) => {
         setSelectedDate(date);
-        fetchAvailability(date); // Actualizăm disponibilitatea pentru noua dată selectată
+        fetchAvailability(date);
     };
 
     const handleSlotSelect = (slot: string) => {
@@ -161,6 +210,7 @@ const ScheduleList: React.FC = () => {
             if (!res.ok) throw new Error("Could not save changes");
             presentToast({ message: 'Settings saved successfully!', duration: 2000, color: 'success' });
             setShowDetailsModal(false);
+            fetchAllCeramicObjects();
         } catch (error: any) {
             presentToast({ message: `Save failed: ${error.message}`, duration: 3000, color: 'danger' });
         }
@@ -170,6 +220,9 @@ const ScheduleList: React.FC = () => {
         <IonPage>
             <IonHeader>
                 <IonToolbar>
+                    <IonButton slot="start" fill="clear" color={isOnline ? 'success' : 'danger'}>
+                    <IonIcon icon={isOnline ? wifiOutline : warningOutline} />
+                     </IonButton>
                     <IonTitle>CeramicFlow</IonTitle>
                     <IonButton slot="end" fill="clear" onClick={handleOpenNotifications}>
                         <IonIcon icon={notificationsOutline} />
@@ -178,7 +231,38 @@ const ScheduleList: React.FC = () => {
                 </IonToolbar>
             </IonHeader>
             <IonContent className="ion-padding" fullscreen>
-                {schedules.map(schedule => {
+
+                {/* MODIFICARE: Segmentul de filtrare adăugat */}
+                <IonSegment
+                    value={activeSegment}
+                    onIonChange={e => setActiveSegment(e.detail.value as any)}
+                    style={{ marginBottom: '10px' }}
+                >
+                    <IonSegmentButton value="pending">
+                        <IonLabel>Scheduled</IonLabel>
+                    </IonSegmentButton>
+                    <IonSegmentButton value="active">
+                        <IonLabel>Next Stage</IonLabel>
+                    </IonSegmentButton>
+                </IonSegment>
+
+                {/* MODIFICARE: Afișare condiționată pe baza segmentului */}
+
+                {/* Lista 1: Programările în așteptare */}
+                {activeSegment === 'pending' && schedules.filter(s => s.status === 'Scheduled').map(schedule => {
+                    const ceramicObject = allCeramicObjects.find(obj => obj.scheduleId === schedule.id);
+                    return (
+                        <ScheduleItem
+                            key={schedule.id}
+                            schedule={schedule}
+                            onClick={() => handleShowDetails(schedule)}
+                            currentStage={ceramicObject?.currentStage}
+                        />
+                    );
+                })}
+
+                {/* Lista 2: Programările active sau terminate */}
+                {activeSegment === 'active' && schedules.filter(s => s.status !== 'Scheduled').map(schedule => {
                     const ceramicObject = allCeramicObjects.find(obj => obj.scheduleId === schedule.id);
                     return (
                         <ScheduleItem
@@ -291,7 +375,7 @@ const ScheduleList: React.FC = () => {
                                     <IonItem>
                                         <IonLabel>Reminders On</IonLabel>
                                         <IonSelect
-                                            value={editableReminders}
+                                            value={editableReminders} // Ar trebui să fie boolean, nu string
                                             onIonChange={e => setEditableReminders(e.detail.value)}
                                         >
                                             <IonSelectOption value={true}>Yes</IonSelectOption>
@@ -309,7 +393,7 @@ const ScheduleList: React.FC = () => {
 
                 <IonModal isOpen={showNotificationsModal} onDidDismiss={() => {
                     setShowNotificationsModal(false);
-                    setNotifications([]);
+                    setNotifications([]); // Golește notificările DOAR după ce au fost văzute
                 }}>
                     <IonHeader>
                         <IonToolbar>
@@ -320,11 +404,14 @@ const ScheduleList: React.FC = () => {
                     <IonContent className="ion-padding">
                         {notifications.length > 0 ? (
                             <IonList>
-                                {notifications.map(notif => (
-                                    <IonItem key={notif.id}>
+                                {/* Folosim any pentru 'notif' deoarece acum conține și 'message' */}
+                                {notifications.map((notif: any, index) => (
+                                    // Folosim index ca parte din cheie
+                                    <IonItem key={`${notif.id}-${index}`}>
                                         <IonLabel>
                                             <h2>{notif.name}</h2>
-                                            <p>Your object has progressed to the <strong>{notif.currentStage}</strong> stage.</p>
+                                            {/* MODIFICARE: Afișăm mesajul direct de la server */}
+                                            <p>{notif.message}</p>
                                         </IonLabel>
                                     </IonItem>
                                 ))}
