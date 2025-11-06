@@ -7,12 +7,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import ScheduleItem from './ScheduleItem';
 import { Schedule } from './Schedule';
 import { CeramicObject } from '../object/CeramicObject';
-import { calendarOutline, notificationsOutline, wifiOutline, warningOutline, logOutOutline } from 'ionicons/icons';
-import { useHistory } from 'react-router-dom';
+import { calendarOutline, notificationsOutline, wifiOutline, warningOutline } from 'ionicons/icons';
 
 const ScheduleList: React.FC = () => {
-    const history = useHistory();
-
     const [schedules, setSchedules] = useState<Schedule[]>([]);
     const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [showDatePicker, setShowDatePicker] = useState(false);
@@ -21,6 +18,7 @@ const ScheduleList: React.FC = () => {
     const [showObjectSelector, setShowObjectSelector] = useState(false);
     const [selectedObjectType, setSelectedObjectType] = useState<string>('');
     const [presentToast] = useIonToast();
+    const clientId = '123';
     const wsRef = useRef<WebSocket | null>(null);
 
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -28,31 +26,18 @@ const ScheduleList: React.FC = () => {
     const [editableReminders, setEditableReminders] = useState<boolean>(false);
 
     const [allCeramicObjects, setAllCeramicObjects] = useState<CeramicObject[]>([]);
-    const [notifications, setNotifications] = useState<any[]>([]);
+    const [notifications, setNotifications] = useState<CeramicObject[]>([]); // Tipul corect
     const [showNotificationsModal, setShowNotificationsModal] = useState(false);
 
+    // Stare nouă pentru segmentul de filtrare
     const [activeSegment, setActiveSegment] = useState<'pending' | 'active'>('pending');
-    const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
-    const [loggedInUsername, setLoggedInUsername] = useState<string>('');
 
-    const handleLogout = () => {
-        localStorage.removeItem('authToken');
-        wsRef.current?.close();
-        history.push('/login');
-    };
+    const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
     const fetchAllSchedules = async () => {
-        const token = localStorage.getItem('authToken');
-        if (!token) return handleLogout();
-
         try {
-            const res = await fetch(`http://localhost:3000/schedules`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (res.status === 401 || res.status === 403) return handleLogout();
+            const res = await fetch(`http://localhost:3000/schedules?clientId=${clientId}`);
             if (!res.ok) throw new Error("Failed to fetch schedules");
-
             const data: Schedule[] = await res.json();
             data.sort((a, b) => new Date(a.hour).getTime() - new Date(b.hour).getTime());
             setSchedules(data);
@@ -60,36 +45,24 @@ const ScheduleList: React.FC = () => {
     };
 
     const fetchAllCeramicObjects = async () => {
-        const token = localStorage.getItem('authToken');
-        if (!token) return handleLogout();
-
         try {
-            const res = await fetch(`http://localhost:3000/ceramic-objects`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (res.status === 401 || res.status === 403) return handleLogout();
+            const res = await fetch(`http://localhost:3000/ceramic-objects`);
             if (!res.ok) throw new Error("Failed to fetch ceramic objects");
-
             const data: CeramicObject[] = await res.json();
             setAllCeramicObjects(data);
         } catch (err) { console.error('Error fetching all ceramic objects:', err); }
     };
 
+    // MODIFICARE: Logica de adăugare a notificărilor (acumulare)
     const fetchNotifications = async () => {
-        const token = localStorage.getItem('authToken');
-        if (!token) return handleLogout();
-
         try {
-            const res = await fetch(`http://localhost:3000/notifications`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (res.status === 401 || res.status === 403) return handleLogout();
+            const res = await fetch(`http://localhost:3000/notifications`);
             if (!res.ok) throw new Error("Failed to fetch notifications");
-
+            // Serverul trimite un tip nou, care include 'message'
             const newNotifications: any[] = await res.json();
+
             if (newNotifications.length > 0) {
+                // Acumulăm notificările, nu le suprascriem
                 setNotifications(prevNotifications => [...prevNotifications, ...newNotifications]);
             }
         } catch (err) { console.error('Error fetching notifications:', err); }
@@ -107,47 +80,19 @@ const ScheduleList: React.FC = () => {
         fetchAllSchedules();
         fetchAllCeramicObjects();
     }, []);
-
     useEffect(() => {
-        const token = localStorage.getItem('authToken');
-        if (token) {
-            try {
-                const payloadBase64 = token.split('.')[1];
-
-                const decodedPayload = atob(payloadBase64);
-
-                const parsedPayload = JSON.parse(decodedPayload);
-
-                if (parsedPayload.username) {
-                    setLoggedInUsername(parsedPayload.username);
-                }
-            } catch (error) {
-                console.error('Failed to parse auth token:', error);
-                handleLogout();
-            }
-        }
-    }, []);
-
-    useEffect(() => {
-        const token = localStorage.getItem('authToken');
-        if (!token) {
-            handleLogout();
-            return;
-        }
-
-        const ws = new WebSocket(`ws://localhost:3000?token=${token}`);
+        const ws = new WebSocket('ws://localhost:3000');
         wsRef.current = ws;
         ws.onopen = () => console.log("WebSocket connected");
         ws.onmessage = (event) => {
             console.log("Received update from server", event.data);
+            // Acum reîncărcăm totul, inclusiv notificările noi
             fetchAllSchedules();
             fetchAllCeramicObjects();
-            fetchNotifications();
+            fetchNotifications(); // Apelăm DOAR când serverul ne anunță
         };
         ws.onclose = () => console.log("WebSocket closed");
-        return () => {
-            ws.close();
-        };
+        return () => ws.close();
     }, []);
 
     useEffect(() => {
@@ -158,20 +103,35 @@ const ScheduleList: React.FC = () => {
 
     useEffect(() => {
         const handleOnline = () => {
+            console.log('Network status: Online');
             setIsOnline(true);
-            presentToast({ message: 'You are back online!', duration: 2000, color: 'success', position: 'top' });
+            presentToast({
+                message: 'You are back online!',
+                duration: 2000,
+                color: 'success',
+                position: 'top'
+            });
         };
+
         const handleOffline = () => {
+            console.log('Network status: Offline');
             setIsOnline(false);
-            presentToast({ message: 'You are now offline.', duration: 2000, color: 'danger', position: 'top' });
+            presentToast({
+                message: 'You are now offline.',
+                duration: 2000,
+                color: 'danger',
+                position: 'top'
+            });
         };
+
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
+
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
-    }, [presentToast]);
+    }, []);
 
     const handleOpenNotifications = () => {
         setShowNotificationsModal(true);
@@ -188,14 +148,12 @@ const ScheduleList: React.FC = () => {
     };
 
     const handleSchedule = async () => {
-        const token = localStorage.getItem('authToken');
-        if (!token) return handleLogout();
-
         if (!selectedSlot || !selectedObjectType) {
             alert('Please select a time and an object type.');
             return;
         }
         const newSchedule = {
+            clientId,
             name: `Schedule for ${selectedObjectType}`,
             date: selectedDate,
             hour: new Date(`${selectedDate}T${selectedSlot}`).toISOString(),
@@ -205,21 +163,17 @@ const ScheduleList: React.FC = () => {
         try {
             const response = await fetch('http://localhost:3000/schedules', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newSchedule),
             });
-
-            if (response.status === 401 || response.status === 403) return handleLogout();
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.message || 'An error occurred.');
             }
-
             presentToast({ message: 'Schedule created successfully!', duration: 3000, color: 'success', position: 'top' });
-            fetchAllSchedules();
+
+            fetchAllSchedules(); // Reîncărcăm întreaga listă
+
             setShowDatePicker(false);
             setShowObjectSelector(false);
             setSelectedSlot(null);
@@ -230,18 +184,10 @@ const ScheduleList: React.FC = () => {
     };
 
     const handleShowDetails = async (schedule: Schedule) => {
-        const token = localStorage.getItem('authToken');
-        if (!token) return handleLogout();
         if (!schedule.id) return;
-
         try {
-            const res = await fetch(`http://localhost:3000/ceramic-objects/${schedule.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (res.status === 401 || res.status === 403) return handleLogout();
+            const res = await fetch(`http://localhost:3000/ceramic-objects/${schedule.id}`);
             if (!res.ok) throw new Error("Could not fetch object details");
-
             const data: CeramicObject = await res.json();
             setCeramicObjectDetails(data);
             setEditableReminders(data.remindersScheduled);
@@ -252,25 +198,16 @@ const ScheduleList: React.FC = () => {
     };
 
     const handleUpdateDetails = async () => {
-        const token = localStorage.getItem('authToken');
-        if (!token) return handleLogout();
         if (!ceramicObjectDetails) return;
-
         try {
             const res = await fetch(`http://localhost:3000/ceramic-objects/${ceramicObjectDetails.scheduleId}`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     remindersScheduled: editableReminders
                 })
             });
-
-            if (res.status === 401 || res.status === 403) return handleLogout();
             if (!res.ok) throw new Error("Could not save changes");
-
             presentToast({ message: 'Settings saved successfully!', duration: 2000, color: 'success' });
             setShowDetailsModal(false);
             fetchAllCeramicObjects();
@@ -284,26 +221,18 @@ const ScheduleList: React.FC = () => {
             <IonHeader>
                 <IonToolbar>
                     <IonButton slot="start" fill="clear" color={isOnline ? 'success' : 'danger'}>
-                        <IonIcon icon={isOnline ? wifiOutline : warningOutline} />
-                    </IonButton>
-                    <IonTitle>
-                        CeramicFlow
-                        <span style={{ fontSize: '0.6em', fontWeight: 'normal', display: 'block', opacity: 0.9 }}>
-                            Hello, {loggedInUsername}
-                        </span>
-                    </IonTitle>
+                    <IonIcon icon={isOnline ? wifiOutline : warningOutline} />
+                     </IonButton>
+                    <IonTitle>CeramicFlow</IonTitle>
                     <IonButton slot="end" fill="clear" onClick={handleOpenNotifications}>
                         <IonIcon icon={notificationsOutline} />
                         {notifications.length > 0 && <IonBadge color="danger">{notifications.length}</IonBadge>}
-                    </IonButton>
-
-                    <IonButton slot="end" onClick={handleLogout} color="danger" fill="clear">
-                        <IonIcon icon={logOutOutline} />
                     </IonButton>
                 </IonToolbar>
             </IonHeader>
             <IonContent className="ion-padding" fullscreen>
 
+                {/* MODIFICARE: Segmentul de filtrare adăugat */}
                 <IonSegment
                     value={activeSegment}
                     onIonChange={e => setActiveSegment(e.detail.value as any)}
@@ -317,6 +246,9 @@ const ScheduleList: React.FC = () => {
                     </IonSegmentButton>
                 </IonSegment>
 
+                {/* MODIFICARE: Afișare condiționată pe baza segmentului */}
+
+                {/* Lista 1: Programările în așteptare */}
                 {activeSegment === 'pending' && schedules.filter(s => s.status === 'Scheduled').map(schedule => {
                     const ceramicObject = allCeramicObjects.find(obj => obj.scheduleId === schedule.id);
                     return (
@@ -329,6 +261,7 @@ const ScheduleList: React.FC = () => {
                     );
                 })}
 
+                {/* Lista 2: Programările active sau terminate */}
                 {activeSegment === 'active' && schedules.filter(s => s.status !== 'Scheduled').map(schedule => {
                     const ceramicObject = allCeramicObjects.find(obj => obj.scheduleId === schedule.id);
                     return (
@@ -442,7 +375,7 @@ const ScheduleList: React.FC = () => {
                                     <IonItem>
                                         <IonLabel>Reminders On</IonLabel>
                                         <IonSelect
-                                            value={editableReminders}
+                                            value={editableReminders} // Ar trebui să fie boolean, nu string
                                             onIonChange={e => setEditableReminders(e.detail.value)}
                                         >
                                             <IonSelectOption value={true}>Yes</IonSelectOption>
@@ -460,7 +393,7 @@ const ScheduleList: React.FC = () => {
 
                 <IonModal isOpen={showNotificationsModal} onDidDismiss={() => {
                     setShowNotificationsModal(false);
-                    setNotifications([]);
+                    setNotifications([]); // Golește notificările DOAR după ce au fost văzute
                 }}>
                     <IonHeader>
                         <IonToolbar>
@@ -471,10 +404,13 @@ const ScheduleList: React.FC = () => {
                     <IonContent className="ion-padding">
                         {notifications.length > 0 ? (
                             <IonList>
+                                {/* Folosim any pentru 'notif' deoarece acum conține și 'message' */}
                                 {notifications.map((notif: any, index) => (
+                                    // Folosim index ca parte din cheie
                                     <IonItem key={`${notif.id}-${index}`}>
                                         <IonLabel>
                                             <h2>{notif.name}</h2>
+                                            {/* MODIFICARE: Afișăm mesajul direct de la server */}
                                             <p>{notif.message}</p>
                                         </IonLabel>
                                     </IonItem>
