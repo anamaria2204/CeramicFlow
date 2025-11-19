@@ -237,39 +237,6 @@ router.delete('/schedules/:id', authMiddleware, async ctx => {
     }
 });
 
-router.put('/schedules/:id', authMiddleware, async ctx => {
-    const db = await dbPromise;
-    const loggedInUserId = ctx.state.user.id;
-    const { id } = ctx.params; // ID-ul programării de modificat
-    const { hour } = ctx.request.body; // Noua oră
-
-    if (!hour) {
-        ctx.response.status = 400;
-        ctx.response.body = { message: 'New hour is required.' };
-        return;
-    }
-
-    try {
-        const result = await db.run(
-            `UPDATE schedules SET hour = ? WHERE id = ? AND clientId = ?`,
-            [new Date(hour).toISOString(), id, loggedInUserId]
-        );
-
-        if (result.changes === 0) {
-            ctx.response.status = 404;
-            ctx.response.body = { message: 'Schedule not found or access denied.' };
-            return;
-        }
-
-        const updatedSchedule = await db.get('SELECT * FROM schedules WHERE id = ?', [id]);
-        ctx.response.body = updatedSchedule;
-
-    } catch (err) {
-        ctx.response.status = 500;
-        ctx.response.body = { message: 'Failed to update time.', error: err.message };
-    }
-});
-
 router.get('/ceramic-objects', authMiddleware, async ctx => {
     const db = await dbPromise;
     const loggedInUserId = ctx.state.user.id;
@@ -368,6 +335,7 @@ app.use(router.allowedMethods());
 
 const stages = ['modeling', 'drying', 'burning', 'painting', 'glazing', 'finished'];
 
+// Setează un interval mai mic pentru testare
 setInterval(async () => {
     try {
         const db = await dbPromise;
@@ -379,10 +347,14 @@ setInterval(async () => {
             WHERE s.hour < ? AND co.currentStage != 'finished'
         `, [now]);
 
-        if (eligibleObjects.length > 0) {
-            const randomIndex = Math.floor(Math.random() * eligibleObjects.length);
-            const objectToUpdate = eligibleObjects[randomIndex];
+        if (eligibleObjects.length === 0) {
+            return; // Nu face nimic dacă nu sunt obiecte
+        }
 
+        // --- MODIFICARE: Procesează TOATE obiectele, nu doar unul random ---
+        for (const objectToUpdate of eligibleObjects) {
+
+            // Logica de avansare a stadiului (aceeași ca înainte)
             const currentStageIndex = stages.indexOf(objectToUpdate.currentStage);
 
             if (currentStageIndex < stages.length - 1) {
@@ -418,14 +390,13 @@ setInterval(async () => {
                 broadcast({
                     event: 'stage_updated',
                     payload: { object: updatedObject, schedule: updatedSchedule }
-                }, objectToUpdate.clientId); // Trimite notificarea doar la clientul corect
+                }, objectToUpdate.clientId);
             }
         }
     } catch (err) {
         console.error('Error in simulator interval:', err);
     }
-}, 15000);
-
+}, 3000);
 server.listen(3000, () => {
     console.log('Server is running on http://localhost:3000');
     console.log('Database file created at ./ceramicflow.sqlite');
