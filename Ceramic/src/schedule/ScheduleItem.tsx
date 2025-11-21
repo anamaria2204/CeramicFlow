@@ -1,32 +1,35 @@
-import { IonCard, IonCardHeader, IonCardTitle, IonCardContent, IonBadge } from '@ionic/react';
 import React from 'react';
+import { IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonCardSubtitle, IonBadge, IonImg } from '@ionic/react';
 import { Schedule } from './Schedule';
 
-interface ScheduleProps {
+interface ScheduleItemProps {
     schedule: Schedule;
     onClick: () => void;
     currentStage?: string;
+    photo?: string;
 }
 
-const ScheduleItem: React.FC<ScheduleProps> = ({ schedule, onClick, currentStage }) => {
-    const dateObj = new Date(schedule.date);
-    const hourObj = new Date(schedule.hour);
-
+const ScheduleItem: React.FC<ScheduleItemProps> = ({ schedule, onClick, currentStage, photo }) => {
     return (
-        <IonCard button={true} onClick={onClick} color="tertiary" className="ion-margin">
+        <IonCard onClick={onClick} style={{ cursor: 'pointer' }}>
+            {/* Display the photo if it exists */}
+            {photo && (
+                <IonImg src={photo} style={{ height: '150px', objectFit: 'cover' }} />
+            )}
             <IonCardHeader>
                 <IonCardTitle>{schedule.name}</IonCardTitle>
+                <IonCardSubtitle>
+                    {new Date(schedule.date).toLocaleDateString()} at {new Date(schedule.hour).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                </IonCardSubtitle>
             </IonCardHeader>
             <IonCardContent>
-                {currentStage && currentStage !== 'modeling' && (
-                    <IonBadge color="success" style={{ marginBottom: '10px', textTransform: 'capitalize' }}>
-                        Update: {currentStage}
+                <p>Type: {schedule.objectType}</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
+                    <IonBadge color={schedule.status === 'Scheduled' ? 'warning' : 'success'}>
+                        {schedule.status}
                     </IonBadge>
-                )}
-                <p><strong>Date:</strong> {dateObj.toLocaleDateString()}</p>
-                <p><strong>Hour:</strong> {hourObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                <p><strong>Object:</strong> {schedule.objectType}</p>
-                <p><strong>Status:</strong> {schedule.status}</p>
+                    {currentStage && <IonBadge color="medium">{currentStage}</IonBadge>}
+                </div>
             </IonCardContent>
         </IonCard>
     );

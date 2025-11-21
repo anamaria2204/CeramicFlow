@@ -1,7 +1,11 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+
+import { defineCustomElements } from '@ionic/pwa-elements/loader';
 import { storage } from './storage';
+
+defineCustomElements(window);
 
 const startApp = () => {
     const container = document.getElementById('root');
@@ -20,6 +24,5 @@ storage.create()
     })
     .catch(error => {
         console.error('Eroare la inițializarea storage-ului:', error);
-        console.warn('Funcționalitatea offline ar putea fi compromisă.');
         startApp();
     });

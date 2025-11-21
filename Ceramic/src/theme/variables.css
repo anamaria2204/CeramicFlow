@@ -18,3 +18,9 @@ http://ionicframework.com/docs/theming/ */
     --ion-color-shade: var(--ion-color-tertiary-shade);
     --ion-color-tint: var(--ion-color-tertiary-tint);
 }
+
+capacitor-google-map {
+    display: inline-block;
+    width: 100%;
+    height: 400px;
+}
